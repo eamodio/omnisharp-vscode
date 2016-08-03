@@ -5,25 +5,23 @@
 
 'use strict';
 
-import {CancellationToken, CodeLens, Range, Uri, TextDocument, CodeLensProvider} from 'vscode';
+import {CancellationToken, CodeLens, Range, Uri, TextDocument, CodeLensProvider, workspace} from 'vscode';
 import {toRange, toLocation} from '../omnisharp/typeConvertion';
 import AbstractSupport from './abstractProvider';
+import GitCodeLensProvider, {IBlameLine} from './gitCodeLensProvider';
+import {OmnisharpServer} from '../omnisharp/server';
 import {updateCodeLensForTest} from './dotnetTest';
 import * as protocol from '../omnisharp/protocol';
 import * as serverUtils from '../omnisharp/utils';
 
-class OmniSharpCodeLens extends CodeLens {
-
-    fileName: string;
-
-    constructor(fileName: string, range: Range) {
+class UsagesCodeLens extends CodeLens {
+    constructor(public fileName: string, range: Range) {
         super(range);
         this.fileName = fileName;
     }
 }
 
-export default class OmniSharpCodeLensProvider extends AbstractSupport implements CodeLensProvider {
-
+export default class UsagesCodeLensProvider extends AbstractSupport implements CodeLensProvider {
     private static filteredSymbolNames: { [name: string]: boolean } = {
         'Equals': true,
         'Finalize': true,
@@ -31,34 +29,50 @@ export default class OmniSharpCodeLensProvider extends AbstractSupport implement
         'ToString': true
     };
 
+    // protected _gitCodeLensProvider: GitCodeLensProvider;
+    private _gitCodeLensEnabled: boolean;
+
+    constructor(server: OmnisharpServer) {
+        super(server);
+        this._gitCodeLensEnabled = !workspace.getConfiguration().get('csharp.disableGitCodeLens', false);
+        //this._gitCodeLensProvider = new GitCodeLensProvider(server);
+    }
+
     provideCodeLenses(document: TextDocument, token: CancellationToken): CodeLens[] | Thenable<CodeLens[]> {
         let request = { Filename: document.fileName };
-        return serverUtils.currentFileMembersAsTree(this._server, { Filename: document.fileName }, token).then(tree => {
-            let ret: CodeLens[] = [];
-            tree.TopLevelTypeDefinitions.forEach(node => this._convertQuickFix(ret, document.fileName, node));
-            return ret;
+
+        let blame = this._gitCodeLensEnabled && GitCodeLensProvider.gitBlame(document.fileName);
+
+        //let changes = this._gitCodeLensProvider && this._gitCodeLensProvider.provideCodeLenses(document, token) as Thenable<CodeLens[]>;
+
+        return serverUtils.currentFileMembersAsTree(this._server, request, token).then(tree => {
+            let lenses: CodeLens[] = [];
+            tree.TopLevelTypeDefinitions.forEach(node => this._provideCodeLens(lenses, document.fileName, node, blame));
+            return lenses;
         });
     }
 
-    private _convertQuickFix(bucket: CodeLens[], fileName: string, node: protocol.Node): void {
-
-        if (node.Kind === 'MethodDeclaration' && OmniSharpCodeLensProvider.filteredSymbolNames[node.Location.Text]) {
+    private _provideCodeLens(lenses: CodeLens[], fileName: string, node: protocol.Node, blame: Thenable<IBlameLine[]>): void {
+        if (node.Kind === 'MethodDeclaration' && UsagesCodeLensProvider.filteredSymbolNames[node.Location.Text]) {
             return;
         }
 
-        let lens = new OmniSharpCodeLens(fileName, toRange(node.Location));
-        bucket.push(lens);
+        let lens = new UsagesCodeLens(fileName, toRange(node.Location));
+        lenses.push(lens);
 
         for (let child of node.ChildNodes) {
-            this._convertQuickFix(bucket, fileName, child);
+            this._provideCodeLens(lenses, fileName, child, blame);
         }
 
-        updateCodeLensForTest(bucket, fileName, node, this._server.isDebugEnable());
+        if (this._gitCodeLensEnabled) {
+            GitCodeLensProvider.provideCodeLens(lenses, fileName, node, blame);
+        }
+
+        updateCodeLensForTest(lenses, fileName, node, this._server.isDebugEnable());
     }
 
     resolveCodeLens(codeLens: CodeLens, token: CancellationToken): Thenable<CodeLens> {
-        if (codeLens instanceof OmniSharpCodeLens) {
-
+        if (codeLens instanceof UsagesCodeLens) {
             let req = <protocol.FindUsagesRequest>{
                 Filename: codeLens.fileName,
                 Line: codeLens.range.start.line + 1,
@@ -81,6 +95,10 @@ export default class OmniSharpCodeLensProvider extends AbstractSupport implement
 
                 return codeLens;
             });
+        }
+
+        if (this._gitCodeLensEnabled) {
+            return GitCodeLensProvider.resolveCodeLens(codeLens, token);
         }
     }
 }

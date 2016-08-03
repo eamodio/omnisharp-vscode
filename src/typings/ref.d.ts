@@ -5,3 +5,4 @@
 
 /// <reference path='../../node_modules/vscode/typings/index.d.ts'/>
 /// <reference path='../../node_modules/vscode/typings/glob.d.ts'/>
+/// <reference path="../../node_modules/vscode/typings/node.d.ts" />

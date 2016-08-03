@@ -6,7 +6,8 @@
 'use strict';
 
 import DefinitionProvider from './features/definitionProvider';
-import CodeLensProvider from './features/codeLensProvider';
+import UsagesCodeLensProvider from './features/usagesCodeLensProvider';
+import GitCodeLensProvider from './features/gitCodeLensProvider';
 import DocumentHighlightProvider from './features/documentHighlightProvider';
 import DocumentSymbolProvider from './features/documentSymbolProvider';
 import CodeActionProvider from './features/codeActionProvider';
@@ -28,7 +29,7 @@ import * as vscode from 'vscode';
 import TelemetryReporter from 'vscode-extension-telemetry';
 
 export function activate(context: vscode.ExtensionContext): any {
-    
+
     const extensionId = 'ms-vscode.csharp';
     const extension = vscode.extensions.getExtension(extensionId);
     const extensionVersion = extension.packageJSON.version;
@@ -49,7 +50,8 @@ export function activate(context: vscode.ExtensionContext): any {
 	disposables.push(server.onServerStart(() => {
 		// register language feature provider on start
 		localDisposables.push(vscode.languages.registerDefinitionProvider(_selector, new DefinitionProvider(server)));
-		localDisposables.push(vscode.languages.registerCodeLensProvider(_selector, new CodeLensProvider(server)));
+		localDisposables.push(vscode.languages.registerCodeLensProvider(_selector, new UsagesCodeLensProvider(server)));
+		//localDisposables.push(vscode.languages.registerCodeLensProvider(_selector, new GitCodeLensProvider(server)));
 		localDisposables.push(vscode.languages.registerDocumentHighlightProvider(_selector, new DocumentHighlightProvider(server)));
 		localDisposables.push(vscode.languages.registerDocumentSymbolProvider(_selector, new DocumentSymbolProvider(server)));
 		localDisposables.push(vscode.languages.registerReferenceProvider(_selector, new ReferenceProvider(server)));
@@ -74,7 +76,7 @@ export function activate(context: vscode.ExtensionContext): any {
 
 	disposables.push(registerCommands(server, context.extensionPath));
 	disposables.push(reportStatus(server));
-    
+
     disposables.push(server.onServerStart(() => {
         // Update or add tasks.json and launch.json
         addAssetsIfNecessary(server);
@@ -89,10 +91,10 @@ export function activate(context: vscode.ExtensionContext): any {
 		advisor.dispose();
 		server.stop();
 	}));
-		
+
     // activate coreclr-debug
     coreclrdebug.activate(context, reporter);
-    
+
 	context.subscriptions.push(...disposables);
 }
 
